@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fidelity.Stay ExtraNet</title>
+    <meta
+      name="description"
+      content="Fidelity.Stay ExtraNet partner property management portal"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="auth-shell" id="auth-shell">
+      <header class="auth-topbar">
+        <a class="auth-brand" href="#signin" data-auth-view="signin" aria-label="Fidelity Stay home">
+          <img src="fidelity-stay-logo.png" alt="" />
+          <span>Fidelity<span>.Stay</span> <small>ExtraNet</small></span>
+        </a>
+        <div class="auth-top-actions">
+          <span>New to Fidelity Stay?</span>
+          <button type="button" class="auth-outline-btn" data-auth-view="signup">Create an account</button>
+        </div>
+      </header>
+      <div id="auth-root"></div>
+      <footer class="auth-footer">
+        <span>© 2026 Fidelity Stay</span>
+        <nav aria-label="Legal and support links">
+          <button type="button" data-auth-view="help">Help centre</button>
+          <a href="#privacy">Privacy</a>
+          <a href="#terms">Terms</a>
+        </nav>
+      </footer>
+    </main>
+
+    <div class="app-shell" hidden>
+      <aside class="sidebar">
+        <div class="brand-wrap">
+          <img class="brand-logo" src="fidelity-stay-logo.png" alt="" />
+          <div>
+            <span class="brand-name">Fidelity.Stay</span>
+            <small>ExtraNet</small>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Sidebar navigation">
+          <button class="nav-item active" type="button" data-page="overview" aria-current="page">
+            <span class="nav-icon">◫</span>
+            <span>Overview</span>
+          </button>
+          <button class="nav-item" type="button" data-page="properties">
+            <span class="nav-icon">▣</span>
+            <span>Properties</span>
+          </button>
+          <button class="nav-item" type="button" data-page="reservations">
+            <span class="nav-icon">☰</span>
+            <span>Reservations</span>
+          </button>
+          <button class="nav-item" type="button" data-page="calendar">
+            <span class="nav-icon">◌</span>
+            <span>Calendar &amp; Availability</span>
+          </button>
+          <button class="nav-item" type="button" data-page="rates">
+            <span class="nav-icon">◍</span>
+            <span>Rates &amp; Pricing</span>
+          </button>
+          <button class="nav-item" type="button" data-page="guests">
+            <span class="nav-icon">◎</span>
+            <span>Guests</span>
+          </button>
+          <button class="nav-item" type="button" data-page="finance">
+            <span class="nav-icon">◔</span>
+            <span>Finance &amp; Payments</span>
+          </button>
+          <button class="nav-item" type="button" data-page="analytics">
+            <span class="nav-icon">◥</span>
+            <span>Analytics</span>
+          </button>
+          <button class="nav-item" type="button" data-page="messages">
+            <span class="nav-icon">✉</span>
+            <span>Messages</span>
+          </button>
+          <button class="nav-item" type="button" data-page="settings">
+            <span class="nav-icon">⚙</span>
+            <span>Settings</span>
+          </button>
+          <button class="nav-item" type="button" data-page="help">
+            <span class="nav-icon">?</span>
+            <span>Help &amp; Support</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-card">
+          <p class="eyebrow">Support</p>
+          <h4>Need help?</h4>
+          <p>Our hospitality team is online to help you manage operations.</p>
+          <button type="button" data-page="help">Contact support</button>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div class="property-switcher">
+            <span class="switcher-label">Property</span>
+            <label class="switcher-pill">
+              <span class="switcher-dot"></span>
+              <span class="switcher-name">The Harbor View Lodge</span>
+              <select class="property-select" aria-label="Select property">
+                <option>The Harbor View Lodge</option>
+                <option>Sunset Bay Suites</option>
+                <option>Seabreeze Inn</option>
+                <option>Cloudwood Retreat</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="topbar-actions">
+            <button class="icon-button" type="button" aria-label="Search" data-action="search">
+              ⌕
+            </button>
+            <button class="icon-button notify" type="button" aria-label="Notifications" data-toast="You have no partner updates yet.">
+              🔔
+              <span class="badge">0</span>
+            </button>
+            <button class="top-link" type="button" data-page="help">Help centre</button>
+            <button class="profile-pill profile-signout" type="button" data-auth-action="signout" aria-label="Sign out of Fidelity Stay">
+              <span class="avatar">FS</span>
+              <span class="profile-signout-copy">
+                <strong>Partner account</strong>
+                <small>Host account</small>
+              </span>
+            </button>
+          </div>
+        </header>
+
+        <div id="page-root" aria-live="polite"></div>
+        <div class="legacy-dashboard" hidden>
+        <section class="hero-row">
+          <div>
+            <p class="eyebrow accent">Operations overview</p>
+            <h1>Good morning, Welcome back!</h1>
+            <p class="subhead">Here's what's happening with your properties today.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="primary-btn" type="button">Add new property</button>
+            <button class="secondary-btn" type="button">Export report</button>
+          </div>
+        </section>
+
+        <section class="stats-grid">
+          <article class="stat-card">
+            <div class="stat-label-row">
+              <span>Total Properties</span>
+              <span class="delta positive">+8.2%</span>
+            </div>
+            <strong>24</strong>
+            <small>Across 6 cities</small>
+          </article>
+          <article class="stat-card">
+            <div class="stat-label-row">
+              <span>Active Reservations</span>
+              <span class="delta positive">+12%</span>
+            </div>
+            <strong>146</strong>
+            <small>11 due this week</small>
+          </article>
+          <article class="stat-card">
+            <div class="stat-label-row">
+              <span>Occupancy Rate</span>
+              <span class="delta positive">+3.1%</span>
+            </div>
+            <strong>78.4%</strong>
+            <small>Target 80%</small>
+          </article>
+          <article class="stat-card emphasis">
+            <div class="stat-label-row">
+              <span>Total Booking Revenue</span>
+              <span class="delta positive">+18.5%</span>
+            </div>
+            <strong>$84,320</strong>
+            <small>Gross bookings</small>
+          </article>
+          <article class="stat-card">
+            <div class="stat-label-row">
+              <span>Pending Reservations</span>
+              <span class="delta neutral">7</span>
+            </div>
+            <strong>17</strong>
+            <small>3 require action</small>
+          </article>
+          <article class="stat-card">
+            <div class="stat-label-row">
+              <span>Upcoming Check-ins</span>
+              <span class="delta neutral">Today</span>
+            </div>
+            <strong>21</strong>
+            <small>9 arrivals today</small>
+          </article>
+        </section>
+
+        <section class="content-grid two-up">
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Performance</p>
+                <h3>Revenue overview</h3>
+              </div>
+              <div class="segmented-control" aria-label="Revenue filter">
+                <button class="segment active" type="button">7D</button>
+                <button class="segment" type="button">30D</button>
+                <button class="segment" type="button">3M</button>
+                <button class="segment" type="button">YTD</button>
+              </div>
+            </div>
+
+            <div class="chart-summary">
+              <div>
+                <span class="chart-label">Revenue</span>
+                <strong>$32.4K</strong>
+              </div>
+              <div>
+                <span class="chart-label">Bookings</span>
+                <strong>418</strong>
+              </div>
+            </div>
+
+            <svg class="revenue-chart" viewBox="0 0 600 220" role="img" aria-label="Revenue trend chart">
+              <defs>
+                <linearGradient id="areaGlow" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#1769AA" stop-opacity="0.3"/>
+                  <stop offset="100%" stop-color="#1769AA" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <g class="grid-lines">
+                <line x1="40" y1="20" x2="560" y2="20"></line>
+                <line x1="40" y1="70" x2="560" y2="70"></line>
+                <line x1="40" y1="120" x2="560" y2="120"></line>
+                <line x1="40" y1="170" x2="560" y2="170"></line>
+              </g>
+              <path d="M40 159 C120 140, 160 120, 210 127 S310 95, 380 103 S480 70, 560 75 L560 200 L40 200 Z" fill="url(#areaGlow)"></path>
+              <path d="M40 159 C120 140, 160 120, 210 127 S310 95, 380 103 S480 70, 560 75" class="chart-line"></path>
+              <g class="chart-points">
+                <circle cx="40" cy="159" r="4"></circle>
+                <circle cx="210" cy="127" r="4"></circle>
+                <circle cx="380" cy="103" r="4"></circle>
+                <circle cx="560" cy="75" r="5"></circle>
+              </g>
+              <g class="x-axis">
+                <text x="40" y="210">Mon</text>
+                <text x="170" y="210">Tue</text>
+                <text x="300" y="210">Wed</text>
+                <text x="430" y="210">Thu</text>
+                <text x="520" y="210">Fri</text>
+              </g>
+            </svg>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header mini-header">
+              <div>
+                <p class="eyebrow">Reservation flow</p>
+                <h3>Reservation activity</h3>
+              </div>
+            </div>
+
+            <div class="donut-wrap">
+              <div class="donut-chart">
+                <span>68%</span>
+              </div>
+              <ul class="status-list tight-list">
+                <li><span class="dot blue"></span> New reservations <strong>84</strong></li>
+                <li><span class="dot green"></span> Confirmed <strong>217</strong></li>
+                <li><span class="dot amber"></span> Pending <strong>47</strong></li>
+                <li><span class="dot red"></span> Cancelled <strong>13</strong></li>
+              </ul>
+            </div>
+          </article>
+        </section>
+
+        <section class="content-grid two-up table-section">
+          <article class="panel wide-panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Following arrivals</p>
+                <h3>Upcoming arrivals</h3>
+              </div>
+              <button class="text-btn" type="button">View all</button>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Guest</th>
+                  <th>Property</th>
+                  <th>Check-in</th>
+                  <th>Check-out</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Emma Wilson</td>
+                  <td>Harbor View Lodge</td>
+                  <td>14 Oct 2026</td>
+                  <td>18 Oct 2026</td>
+                  <td><span class="status-pill confirmed">Confirmed</span></td>
+                </tr>
+                <tr>
+                  <td>Daniel Kim</td>
+                  <td>Sunset Bay Suites</td>
+                  <td>15 Oct 2026</td>
+                  <td>20 Oct 2026</td>
+                  <td><span class="status-pill pending">Pending</span></td>
+                </tr>
+                <tr>
+                  <td>Marina Costa</td>
+                  <td>Seabreeze Inn</td>
+                  <td>16 Oct 2026</td>
+                  <td>19 Oct 2026</td>
+                  <td><span class="status-pill checkedin">Checked In</span></td>
+                </tr>
+                <tr>
+                  <td>Owen Foster</td>
+                  <td>Cloudwood Retreat</td>
+                  <td>18 Oct 2026</td>
+                  <td>22 Oct 2026</td>
+                  <td><span class="status-pill confirmed">Confirmed</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header mini-header">
+              <div>
+                <p class="eyebrow">Portfolio</p>
+                <h3>Property performance</h3>
+              </div>
+            </div>
+
+            <div class="property-list">
+              <div class="property-item">
+                <img src="https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=400&q=80" alt="Harbor View Lodge" />
+                <div class="property-meta">
+                  <h4>Harbor View Lodge</h4>
+                  <p>Capetown</p>
+                  <div class="metric-row">
+                    <span>Occupancy 82%</span>
+                    <span class="trend positive">+14%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="property-item">
+                <img src="https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=400&q=80" alt="Sunset Bay Suites" />
+                <div class="property-meta">
+                  <h4>Sunset Bay Suites</h4>
+                  <p>Durban</p>
+                  <div class="metric-row">
+                    <span>Occupancy 75%</span>
+                    <span class="trend positive">+9%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="property-item">
+                <img src="https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=400&q=80" alt="Seabreeze Inn" />
+                <div class="property-meta">
+                  <h4>Seabreeze Inn</h4>
+                  <p>Joburg</p>
+                  <div class="metric-row">
+                    <span>Occupancy 88%</span>
+                    <span class="trend positive">+11%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel form-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Property setup</p>
+              <h3>Add new property</h3>
+            </div>
+            <button class="text-btn" type="button">Save as draft</button>
+          </div>
+
+          <div class="progress-steps">
+            <div class="step active">1 <span>Basic info</span></div>
+            <div class="step">2 <span>Photos</span></div>
+            <div class="step">3 <span>Rooms</span></div>
+            <div class="step">4 <span>Amenities</span></div>
+            <div class="step">5 <span>Pricing</span></div>
+            <div class="step">6 <span>Review</span></div>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              Property name
+              <input type="text" value="The Harbor View Lodge" />
+            </label>
+            <label>
+              Property type
+              <select>
+                <option selected>Boutique Hotel</option>
+                <option>Guesthouse</option>
+                <option>Lodge</option>
+                <option>Apartment</option>
+              </select>
+            </label>
+            <label class="full-width">
+              Description
+              <textarea rows="4">Modern boutique accommodation with sea views, private check-in, and rooftop breakfast dining experience.</textarea>
+            </label>
+            <label>
+              Location
+              <input type="text" value="Cape Town, South Africa" />
+            </label>
+            <label>
+              Contact number
+              <input type="text" value="+27 21 555 1024" />
+            </label>
+            <label>
+              Check-in time
+              <input type="text" value="14:00" />
+            </label>
+            <label>
+              Check-out time
+              <input type="text" value="11:00" />
+            </label>
+            <label>
+              Base nightly rate
+              <input type="text" value="$240" />
+            </label>
+          </div>
+
+          <div class="upload-box">
+            <div>
+              <strong>Property gallery</strong>
+              <p>Cover photo, room images and exterior shots ready for approval.</p>
+            </div>
+            <button type="button">Upload media</button>
+          </div>
+        </section>
+
+        <section class="panel reservation-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Reservation administration</p>
+              <h3>Reservation management</h3>
+            </div>
+            <div class="panel-actions">
+              <input type="search" placeholder="Search bookings" aria-label="Search bookings" />
+              <button class="secondary-btn small" type="button">Filter</button>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Booking ref</th>
+                <th>Guest</th>
+                <th>Property</th>
+                <th>Check-in</th>
+                <th>Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>#FS-4839</td>
+                <td>Sarah J.</td>
+                <td>Harbor View Lodge</td>
+                <td>14 Nov</td>
+                <td>$620</td>
+                <td><span class="status-pill confirmed">Confirmed</span></td>
+              </tr>
+              <tr>
+                <td>#FS-4823</td>
+                <td>Luca M.</td>
+                <td>Sunset Bay Suites</td>
+                <td>18 Nov</td>
+                <td>$480</td>
+                <td><span class="status-pill pending">Pending</span></td>
+              </tr>
+              <tr>
+                <td>#FS-4811</td>
+                <td>Ana K.</td>
+                <td>Seabreeze Inn</td>
+                <td>20 Nov</td>
+                <td>$540</td>
+                <td><span class="status-pill checkedin">Checked In</span></td>
+              </tr>
+              <tr>
+                <td>#FS-4802</td>
+                <td>James T.</td>
+                <td>Cloudwood Retreat</td>
+                <td>22 Nov</td>
+                <td>$710</td>
+                <td><span class="status-pill cancelled">Cancelled</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+        </div>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" aria-live="polite">Property submitted for approval</div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
