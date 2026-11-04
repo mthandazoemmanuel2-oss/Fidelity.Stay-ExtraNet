@@ -5,6 +5,11 @@ const authShell = document.getElementById("auth-shell");
 const authRoot = document.getElementById("auth-root");
 const appShell = document.querySelector(".app-shell");
 const accountStorageKey = "fidelity-stay.partner-accounts.v1";
+const firebaseConfig = window.FIDELITY_STAY_FIREBASE_CONFIG || {};
+const cloudModeEnabled = ["apiKey", "authDomain", "projectId", "appId"]
+  .every((key) => typeof firebaseConfig[key] === "string" && firebaseConfig[key].trim());
+let cloudServicesPromise = null;
+let suppressAuthObserver = false;
 
 const bookings = [];
 const guests = [];
@@ -65,8 +70,174 @@ function saveAccounts(accounts) {
   }
 }
 
-function saveCurrentAccount() {
+async function getCloudServices() {
+  if (!cloudModeEnabled) return null;
+  if (!cloudServicesPromise) {
+    const sdkBase = "https://www.gstatic.com/firebasejs/13.2.0";
+    cloudServicesPromise = Promise.all([
+      import(`${sdkBase}/firebase-app.js`),
+      import(`${sdkBase}/firebase-auth.js`),
+      import(`${sdkBase}/firebase-firestore.js`),
+    ]).then(([appSdk, authSdk, firestoreSdk]) => {
+      const app = appSdk.initializeApp(firebaseConfig);
+      return {
+        auth: authSdk.getAuth(app),
+        db: firestoreSdk.getFirestore(app),
+        authSdk,
+        firestoreSdk,
+      };
+    });
+  }
+  return cloudServicesPromise;
+}
+
+async function loadCloudAccount(user, services) {
+  const { db, firestoreSdk } = services;
+  const { collection, doc, getDoc, getDocs, setDoc } = firestoreSdk;
+  const userRef = doc(db, "users", user.uid);
+  const profileSnapshot = await getDoc(userRef);
+  const profile = profileSnapshot.exists()
+    ? profileSnapshot.data()
+    : {
+      name: user.displayName || user.email.split("@")[0],
+      email: user.email,
+      createdAt: new Date().toISOString(),
+    };
+
+  if (!profileSnapshot.exists()) {
+    await setDoc(userRef, { ...profile, updatedAt: new Date().toISOString() });
+  }
+
+  const propertySnapshots = await getDocs(collection(db, "users", user.uid, "properties"));
+  const cloudProperties = await Promise.all(propertySnapshots.docs.map(async (propertySnapshot) => {
+    const property = { id: propertySnapshot.id, ...propertySnapshot.data() };
+    const photoRefs = property.photos || [];
+    property.photos = await Promise.all(photoRefs.map(async (photo) => {
+      const chunkSnapshots = await getDocs(collection(
+        db,
+        "users",
+        user.uid,
+        "properties",
+        property.id,
+        "photos",
+        photo.id,
+        "chunks",
+      ));
+      const chunks = chunkSnapshots.docs
+        .map((chunk) => chunk.data())
+        .sort((left, right) => left.index - right.index);
+      if (!chunks.length) throw new Error(`Photo data is missing for ${photo.name}.`);
+      return { name: photo.name, data: chunks.map((chunk) => chunk.value).join("") };
+    }));
+    return property;
+  }));
+
+  return {
+    uid: user.uid,
+    name: profile.name || user.displayName || user.email.split("@")[0],
+    email: user.email,
+    createdAt: profile.createdAt || new Date().toISOString(),
+    properties: cloudProperties,
+  };
+}
+
+async function saveCloudAccount(account) {
+  const services = await getCloudServices();
+  const { doc, setDoc } = services.firestoreSdk;
+  await setDoc(doc(services.db, "users", account.uid), {
+    name: account.name,
+    email: account.email,
+    createdAt: account.createdAt,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
+async function saveCloudProperty(account, property) {
+  const services = await getCloudServices();
+  const { collection, doc, setDoc, writeBatch } = services.firestoreSdk;
+  const propertyRef = doc(services.db, "users", account.uid, "properties", property.id);
+  const photoRefs = [];
+  let batch = writeBatch(services.db);
+  let batchSize = 0;
+  const commitBatch = async () => {
+    if (!batchSize) return;
+    await batch.commit();
+    batch = writeBatch(services.db);
+    batchSize = 0;
+  };
+
+  for (const [photoIndex, photo] of (property.photos || []).entries()) {
+    const photoId = `photo-${photoIndex + 1}`;
+    photoRefs.push({ id: photoId, name: photo.name });
+    for (let offset = 0, index = 0; offset < photo.data.length; offset += 400_000, index += 1) {
+      const chunkRef = doc(collection(propertyRef, "photos", photoId, "chunks"), String(index).padStart(4, "0"));
+      batch.set(chunkRef, {
+        index,
+        value: photo.data.slice(offset, offset + 400_000),
+      });
+      batchSize += 1;
+      if (batchSize === 400) await commitBatch();
+    }
+  }
+  await commitBatch();
+
+  const { photos, ...propertyFields } = property;
+  await setDoc(propertyRef, {
+    ...propertyFields,
+    photos: photoRefs,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+async function deleteCloudAccount(account, password) {
+  const services = await getCloudServices();
+  const { auth, authSdk, db, firestoreSdk } = services;
+  const { EmailAuthProvider, reauthenticateWithCredential, deleteUser } = authSdk;
+  const user = auth.currentUser;
+  if (!user || user.uid !== account.uid) throw new Error("Your session has ended. Sign in again before deleting your account.");
+  if (!password) throw new Error("Enter your password to confirm account deletion.");
+  await reauthenticateWithCredential(user, EmailAuthProvider.credential(account.email, password));
+
+  const { collection, deleteDoc, doc, getDocs, writeBatch } = firestoreSdk;
+  const propertySnapshots = await getDocs(collection(db, "users", account.uid, "properties"));
+  let refsToDelete = [];
+  for (const propertySnapshot of propertySnapshots.docs) {
+    const photos = await getDocs(collection(propertySnapshot.ref, "photos"));
+    for (const photo of photos.docs) {
+      const chunks = await getDocs(collection(photo.ref, "chunks"));
+      refsToDelete.push(...chunks.docs.map((chunk) => chunk.ref), photo.ref);
+    }
+    refsToDelete.push(propertySnapshot.ref);
+  }
+  refsToDelete.push(doc(db, "users", account.uid));
+
+  while (refsToDelete.length) {
+    const batch = writeBatch(db);
+    refsToDelete.splice(0, 400).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+  await deleteUser(user);
+}
+
+function firebaseErrorMessage(error, action) {
+  if (error?.code === "auth/email-already-in-use") return "An account with this email already exists. Sign in instead.";
+  if (error?.code === "auth/weak-password") return "Choose a stronger password and try again.";
+  if (error?.code === "auth/invalid-email") return "Enter a valid email address.";
+  if (error?.code === "auth/invalid-credential" || error?.code === "auth/user-not-found" || error?.code === "auth/wrong-password") {
+    if (action === "Account deletion") return "That password is incorrect. Your account was not deleted.";
+    return "Could not sign in. Check your email and password, or create an account first.";
+  }
+  if (error?.code === "auth/too-many-requests") return "Too many attempts. Wait a little and try again.";
+  if (error?.code === "auth/requires-recent-login") return "Sign in again before deleting your account.";
+  return error instanceof Error ? error.message : `${action} failed. Please try again.`;
+}
+
+async function saveCurrentAccount() {
   if (!currentAccount) throw new Error("Sign in again before saving this property.");
+  if (currentAccount.uid) {
+    await saveCloudAccount(currentAccount);
+    return;
+  }
   const accounts = loadAccounts();
   const accountIndex = accounts.findIndex((account) => account.email === currentAccount.email);
   if (accountIndex < 0) throw new Error("Your account is no longer available in this browser. Sign in again.");
@@ -257,7 +428,7 @@ function renderAuth(view = "signin", email = "", accountSaved = true) {
             </form>
             <div class="auth-divider"><span>PARTNER ACCESS PREVIEW</span></div>
             <p class="auth-switch">New to Fidelity Stay? <button type="button" data-auth-view="signup">Create a partner account</button></p>
-            <p class="auth-note"><span>▣</span> Remembered accounts stay in this browser only. Don’t reuse a real password.</p>
+            <p class="auth-note"><span>▣</span> ${cloudModeEnabled ? "Accounts use Firebase Auth and sync across devices when configured." : "Demo mode: accounts stay in this browser only. Don’t reuse a real password."}</p>
           </div>
         </section>
       </div>`,
@@ -283,7 +454,7 @@ function renderAuth(view = "signin", email = "", accountSaved = true) {
               <button class="auth-submit" type="submit">Create account</button>
             </form>
             <p class="auth-switch">Already have an account? <button type="button" data-auth-view="signin">Sign in</button></p>
-            <p class="auth-note"><span>▣</span> Your account is saved only if you select “Remember me on this device.” Don’t use a password you use elsewhere.</p>
+            <p class="auth-note"><span>▣</span> ${cloudModeEnabled ? "Select “Remember me on this device” to create a Firebase account that you can use on other devices." : "Demo mode saves your account only if you select “Remember me on this device.” Don’t use a password you use elsewhere."}</p>
           </div>
         </section>
       </div>`,
@@ -315,7 +486,7 @@ function renderAuth(view = "signin", email = "", accountSaved = true) {
         <p class="auth-eyebrow">ACCOUNT RECOVERY</p>
         <h1>Next steps</h1>
         <p>If <strong>${safeEmail}</strong> is linked to a partner account, password reset instructions would be sent to that address.</p>
-        <div class="demo-info"><strong>Prototype preview</strong><span>Password recovery email delivery is not connected.</span></div>
+        <div class="demo-info"><strong>${cloudModeEnabled ? "Check your inbox" : "Prototype preview"}</strong><span>${cloudModeEnabled ? "If an account exists for this address, Firebase will send password reset instructions." : "Password recovery email delivery is not connected."}</span></div>
         <button class="auth-submit" type="button" data-auth-view="signin">Return to sign in</button>
       </section>`,
     help: `
@@ -349,6 +520,29 @@ function enterDemo(account) {
   document.querySelector(".profile-signout .avatar").textContent = initials;
   const initialPage = location.hash.slice(1);
   renderPage(pageViews[initialPage] ? initialPage : "overview");
+}
+
+async function initializeCloudAuth() {
+  if (!cloudModeEnabled) return;
+  try {
+    const services = await getCloudServices();
+    services.authSdk.onAuthStateChanged(services.auth, async (user) => {
+      if (suppressAuthObserver) return;
+      if (!user) {
+        if (currentAccount?.uid) endAccountSession();
+        return;
+      }
+      if (currentAccount?.uid === user.uid) return;
+      try {
+        const account = await loadCloudAccount(user, services);
+        if (!currentAccount) enterDemo(account);
+      } catch (error) {
+        showAuthError(authRoot.querySelector('[data-auth-form="signin"]') || authRoot, firebaseErrorMessage(error, "Cloud account setup"));
+      }
+    });
+  } catch (error) {
+    showToast(`Cloud authentication could not initialize: ${firebaseErrorMessage(error, "Firebase setup")}`);
+  }
 }
 
 function getCalendarDates() {
@@ -648,7 +842,7 @@ const pageViews = {
         <div class="danger-zone"><div class="danger-zone-copy"><span class="danger-icon" aria-hidden="true">!</span><span><strong>Delete account</strong><small>Permanently remove this account and its saved properties from this browser.</small></span></div><button class="danger-outline-btn" type="button" data-account-action="delete">Delete account</button></div>
         <p class="account-storage-note">This prototype stores account data only in this browser. Deletion here does not contact Fidelity Stay or remove data from another device.</p>
       </section>
-      <div class="form-footer"><small>Changes are saved in this browser.</small><button class="primary-btn" type="submit">Save changes</button></div>
+      <div class="form-footer"><small>Changes are saved ${currentAccount?.uid ? "to your cloud account." : "in this browser."}</small><button class="primary-btn" type="submit">Save changes</button></div>
     </form></section>`;
   },
 
@@ -687,9 +881,10 @@ function openAccountActionDialog(action) {
     ? `<div class="account-dialog-icon danger" aria-hidden="true">!</div>
       <p class="eyebrow">Permanent action</p>
       <h2 id="account-dialog-title">Delete your account?</h2>
-      <p id="account-dialog-description">This removes your partner account and its saved properties from this browser. This cannot be undone.</p>
-      <div class="account-dialog-notice"><strong>Prototype limitation</strong><span>Nothing is sent to Fidelity Stay. Other browsers or devices are not affected.</span></div>
+      <p id="account-dialog-description">${currentAccount?.uid ? "This permanently deletes your Firebase account and saved properties from the cloud. This cannot be undone." : "This removes your partner account and its saved properties from this browser. This cannot be undone."}</p>
+      <div class="account-dialog-notice"><strong>${currentAccount?.uid ? "Permanent cloud deletion" : "Prototype limitation"}</strong><span>${currentAccount?.uid ? "Your account and property data will be removed for all devices." : "Nothing is sent to Fidelity Stay. Other browsers or devices are not affected."}</span></div>
       <form id="account-action-form" data-account-action-form="delete">
+        ${currentAccount?.uid ? `<label for="delete-account-password">Password</label><input id="delete-account-password" name="password" type="password" autocomplete="current-password" required>` : ""}
         <label for="delete-account-confirmation">Type <strong>DELETE</strong> to confirm</label>
         <input id="delete-account-confirmation" name="confirmation" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="DELETE" required>
         <p class="account-dialog-error" role="alert" hidden></p>
@@ -701,6 +896,7 @@ function openAccountActionDialog(action) {
       <h2 id="account-dialog-title">Sign out?</h2>
       <p id="account-dialog-description">You’re signed in as <strong>${accountEmail}</strong>. You can sign back in anytime; your saved account and properties will stay on this device.</p>
       <form id="account-action-form" data-account-action-form="signout">
+        <p class="account-dialog-error" role="alert" hidden></p>
         <div class="account-dialog-actions"><button class="secondary-btn" type="button" data-dialog-close>Stay signed in</button><button class="signout-confirm-btn" type="submit">Sign out</button></div>
       </form>`;
   dialog.showModal();
@@ -762,7 +958,7 @@ function exportCurrentPage() {
   showToast("Your export is ready.");
 }
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", async (event) => {
   const accountDialog = document.getElementById("account-action-dialog");
   if (event.target === accountDialog) {
     accountDialog.close();
@@ -854,6 +1050,7 @@ document.addEventListener("click", (event) => {
       document.getElementById("property-setup-form").reportValidity();
       return;
     }
+    let attemptedPropertyId = "";
     try {
       const property = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -865,16 +1062,25 @@ document.addEventListener("click", (event) => {
         photos: propertyDraftPhotos,
         createdAt: new Date().toISOString(),
       };
+      attemptedPropertyId = property.id;
       currentAccount.properties.push(property);
-      saveCurrentAccount();
+      if (currentAccount.uid) {
+        await saveCloudProperty(currentAccount, property);
+        await saveCloudAccount(currentAccount);
+      } else {
+        await saveCurrentAccount();
+      }
       syncProperties();
       selectedPropertyId = property.id;
       updatePropertySwitcher();
       renderPage("properties");
       showToast("Your property was saved to this browser account.");
     } catch (error) {
+      if (currentAccount?.properties) {
+        currentAccount.properties = currentAccount.properties.filter((property) => property.id !== attemptedPropertyId);
+      }
       const form = document.getElementById("property-setup-form");
-      showAuthError(form, error instanceof Error ? error.message : "The property could not be saved.");
+      showAuthError(form, firebaseErrorMessage(error, "Property save"));
     }
     return;
   }
@@ -1029,31 +1235,64 @@ document.addEventListener("submit", async (event) => {
     if (!form.reportValidity()) return;
 
     if (form.dataset.accountActionForm === "signout") {
-      dialog.close();
-      endAccountSession();
+      try {
+        if (currentAccount?.uid) {
+          const services = await getCloudServices();
+          await services.authSdk.signOut(services.auth);
+        }
+        dialog.close();
+        endAccountSession();
+      } catch (error) {
+        const errorMessage = form.querySelector(".account-dialog-error");
+        errorMessage.textContent = firebaseErrorMessage(error, "Sign out");
+        errorMessage.hidden = false;
+      }
       return;
     }
 
     try {
       if (!currentAccount) throw new Error("Your session has ended. Sign in again before deleting your account.");
-      const accounts = loadAccounts();
-      const remainingAccounts = accounts.filter((account) => account.email !== currentAccount.email);
-      if (remainingAccounts.length === accounts.length) {
-        throw new Error("This account is no longer available in this browser. It was not deleted.");
+      const deletedCloudAccount = Boolean(currentAccount.uid);
+      if (deletedCloudAccount) {
+        await deleteCloudAccount(currentAccount, form.elements.password.value);
+      } else {
+        const accounts = loadAccounts();
+        const remainingAccounts = accounts.filter((account) => account.email !== currentAccount.email);
+        if (remainingAccounts.length === accounts.length) {
+          throw new Error("This account is no longer available in this browser. It was not deleted.");
+        }
+        saveAccounts(remainingAccounts);
       }
-      saveAccounts(remainingAccounts);
       dialog.close();
       endAccountSession();
-      showToast("Your account and saved properties were deleted from this browser.");
+      showToast(deletedCloudAccount ? "Your account and cloud properties were deleted." : "Your account and saved properties were deleted from this browser.");
     } catch (error) {
       const errorMessage = form.querySelector(".account-dialog-error");
-      errorMessage.textContent = error instanceof Error ? error.message : "The account could not be deleted.";
+      errorMessage.textContent = firebaseErrorMessage(error, "Account deletion");
       errorMessage.hidden = false;
     }
   } else if (event.target.matches('[data-auth-form="signin"]')) {
     const form = event.target;
     const email = form.elements.email.value.trim().toLowerCase();
     try {
+      if (cloudModeEnabled) {
+        const services = await getCloudServices();
+        suppressAuthObserver = true;
+        try {
+          const credential = await services.authSdk.signInWithEmailAndPassword(
+            services.auth,
+            email,
+            form.elements.password.value,
+          );
+          const account = await loadCloudAccount(credential.user, services);
+          enterDemo(account);
+        } finally {
+          suppressAuthObserver = false;
+        }
+        showToast("You’re signed in. Your account data is synced from the cloud.");
+        return;
+      }
+
       const account = loadAccounts().find((savedAccount) => savedAccount.email === email);
       if (!account) {
         showAuthError(form, "User not found. Select “Remember me on this device” when creating an account, or check your email.");
@@ -1067,7 +1306,7 @@ document.addEventListener("submit", async (event) => {
       enterDemo(account);
       showToast("You’re signed in to the Fidelity Stay prototype.");
     } catch (error) {
-      showAuthError(form, error instanceof Error ? error.message : "Sign-in failed. Please try again.");
+      showAuthError(form, firebaseErrorMessage(error, "Sign-in"));
     }
   } else if (event.target.matches('[data-auth-form="signup"]')) {
     const form = event.target;
@@ -1077,11 +1316,6 @@ document.addEventListener("submit", async (event) => {
     if (!form.reportValidity()) return;
     const email = form.elements.email.value.trim().toLowerCase();
     try {
-      const accounts = loadAccounts();
-      if (accounts.some((account) => account.email === email)) {
-        showAuthError(form, "An account with this email already exists. Sign in instead.");
-        return;
-      }
       const rememberAccount = form.elements.remember.checked;
       if (!rememberAccount) {
         const rememberOption = form.querySelector(".signup-remember");
@@ -1097,6 +1331,38 @@ document.addEventListener("submit", async (event) => {
         }, 700);
         return;
       }
+      if (cloudModeEnabled) {
+        const services = await getCloudServices();
+        suppressAuthObserver = true;
+        try {
+          const credential = await services.authSdk.createUserWithEmailAndPassword(
+            services.auth,
+            email,
+            password.value,
+          );
+          const name = form.elements.name.value.trim();
+          await services.authSdk.updateProfile(credential.user, { displayName: name });
+          const account = {
+            uid: credential.user.uid,
+            name,
+            email: credential.user.email,
+            createdAt: new Date().toISOString(),
+            properties: [],
+          };
+          await saveCloudAccount(account);
+          enterDemo(account);
+        } finally {
+          suppressAuthObserver = false;
+        }
+        showToast("Your account is ready. Sign in on another device to access your cloud data.");
+        return;
+      }
+
+      const accounts = loadAccounts();
+      if (accounts.some((account) => account.email === email)) {
+        showAuthError(form, "An account with this email already exists. Sign in instead.");
+        return;
+      }
       const salt = createSalt();
       const passwordHash = await hashPassword(password.value, salt);
       const account = {
@@ -1110,10 +1376,21 @@ document.addEventListener("submit", async (event) => {
       saveAccounts([...accounts, account]);
       renderAuth("verify", email);
     } catch (error) {
-      showAuthError(form, error instanceof Error ? error.message : "Account creation failed. Please try again.");
+      showAuthError(form, firebaseErrorMessage(error, "Account creation"));
     }
   } else if (event.target.matches('[data-auth-form="forgot"]')) {
-    renderAuth("resetSent", event.target.elements.email.value.trim());
+    const email = event.target.elements.email.value.trim();
+    if (cloudModeEnabled) {
+      try {
+        const services = await getCloudServices();
+        await services.authSdk.sendPasswordResetEmail(services.auth, email);
+        renderAuth("resetSent", email);
+      } catch (error) {
+        showAuthError(event.target, firebaseErrorMessage(error, "Password reset"));
+      }
+    } else {
+      renderAuth("resetSent", email);
+    }
   } else if (event.target.matches(".reply-form")) {
     const message = event.target.querySelector("textarea");
     if (!message.value.trim()) {
@@ -1134,10 +1411,10 @@ document.addEventListener("submit", async (event) => {
     const lastName = form.querySelectorAll("#account-details input")[1];
     currentAccount.name = [firstName.value.trim(), lastName.value.trim()].filter(Boolean).join(" ");
     try {
-      saveCurrentAccount();
+      await saveCurrentAccount();
       enterDemo(currentAccount);
       renderPage("settings");
-      showToast("Your account details were saved in this browser.");
+      showToast(currentAccount.uid ? "Your account details were saved to the cloud." : "Your account details were saved in this browser.");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Account details could not be saved.");
     }
@@ -1145,3 +1422,4 @@ document.addEventListener("submit", async (event) => {
 });
 
 renderAuth("signin");
+initializeCloudAuth();
