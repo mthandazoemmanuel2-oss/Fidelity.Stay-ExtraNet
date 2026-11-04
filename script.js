@@ -29,6 +29,8 @@ const blankPropertyDraft = () => ({
   roomName: "",
   roomCount: "1",
   guestsPerRoom: "2",
+  amenities: [],
+  additionalAmenities: "",
   baseRate: "",
   currency: "ZAR",
   availableFrom: "",
@@ -83,6 +85,14 @@ function syncProperties() {
       property,
     ])
     : [];
+}
+
+function countPropertyAmenities(property) {
+  const selected = Array.isArray(property?.amenities) ? property.amenities.length : 0;
+  const additional = typeof property?.additionalAmenities === "string"
+    ? property.additionalAmenities.split(/[,\n;]/).filter((amenity) => amenity.trim()).length
+    : 0;
+  return selected + additional;
 }
 
 function updatePropertySwitcher() {
@@ -166,6 +176,9 @@ function capturePropertyDraft(form) {
   for (const [key, value] of formData.entries()) {
     if (typeof value === "string") propertyDraft[key] = value.trim();
   }
+  if (form.querySelector('[name="amenities"]')) {
+    propertyDraft.amenities = formData.getAll("amenities").map(String);
+  }
 }
 
 function createSalt() {
@@ -212,7 +225,7 @@ const escapeHTML = (value) => String(value).replace(/[&<>"']/g, (character) => (
   "'": "&#39;",
 }[character]));
 
-function renderAuth(view = "signin", email = "") {
+function renderAuth(view = "signin", email = "", accountSaved = true) {
   const safeEmail = escapeHTML(email);
   const views = {
     signin: `
@@ -239,12 +252,12 @@ function renderAuth(view = "signin", email = "") {
             <form class="auth-form" data-auth-form="signin">
               <label>Email address<input name="email" type="email" placeholder="name@company.com" autocomplete="email" value="${safeEmail}" required></label>
               <label>Password<span class="password-field"><input id="signin-password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required><button type="button" class="password-toggle" data-toggle-password="signin-password" aria-label="Show password">Show</button></span></label>
-              <div class="auth-options"><label class="remember-option"><input type="checkbox" name="remember"> <span>Remember me</span></label><button class="auth-link" type="button" data-auth-view="forgot">Forgot password?</button></div>
+              <div class="auth-options"><button class="auth-link" type="button" data-auth-view="forgot">Forgot password?</button></div>
               <button class="auth-submit" type="submit">Sign in</button>
             </form>
             <div class="auth-divider"><span>PARTNER ACCESS PREVIEW</span></div>
             <p class="auth-switch">New to Fidelity Stay? <button type="button" data-auth-view="signup">Create a partner account</button></p>
-            <p class="auth-note"><span>▣</span> Prototype accounts are saved in this browser only. Don’t reuse a real password.</p>
+            <p class="auth-note"><span>▣</span> Remembered accounts stay in this browser only. Don’t reuse a real password.</p>
           </div>
         </section>
       </div>`,
@@ -265,11 +278,12 @@ function renderAuth(view = "signin", email = "") {
               <label>Work email<input name="email" type="email" placeholder="name@company.com" autocomplete="email" value="${safeEmail}" required></label>
               <label>Create password<span class="password-field"><input id="signup-password" name="password" type="password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required><button type="button" class="password-toggle" data-toggle-password="signup-password" aria-label="Show password">Show</button></span><small class="field-help">Use at least 8 characters.</small></label>
               <label>Confirm password<input name="confirm-password" type="password" placeholder="Enter your password again" autocomplete="new-password" minlength="8" required></label>
+              <label class="remember-option signup-remember"><input type="checkbox" name="remember" aria-describedby="remember-help"> <span><strong>Remember me on this device</strong><small id="remember-help">If unchecked, your account won’t be saved and you won’t be able to sign in later from this browser.</small><small class="remember-feedback" aria-live="polite" hidden></small></span></label>
               <label class="terms-option"><input type="checkbox" name="terms" required><span>I agree to the <a href="#terms">Partner Terms</a> and <a href="#privacy">Privacy Policy</a>.</span></label>
               <button class="auth-submit" type="submit">Create account</button>
             </form>
             <p class="auth-switch">Already have an account? <button type="button" data-auth-view="signin">Sign in</button></p>
-            <p class="auth-note"><span>▣</span> This prototype saves your account in this browser only. Don’t use a password you use elsewhere.</p>
+            <p class="auth-note"><span>▣</span> Your account is saved only if you select “Remember me on this device.” Don’t use a password you use elsewhere.</p>
           </div>
         </section>
       </div>`,
@@ -277,9 +291,9 @@ function renderAuth(view = "signin", email = "") {
       <section class="auth-single-card">
         <div class="verify-icon" aria-hidden="true">✉</div>
         <p class="auth-eyebrow">ONE LAST STEP</p>
-        <h1>Check your inbox</h1>
-        <p>Your partner account for <strong>${safeEmail}</strong> has been saved in this browser.</p>
-        <div class="demo-info"><strong>Email confirmation isn’t connected</strong><span>Sign in with the email and password you just created. Account data stays in this browser.</span></div>
+        <h1>${accountSaved ? "Check your inbox" : "Account not saved"}</h1>
+        <p>${accountSaved ? `Your partner account for <strong>${safeEmail}</strong> has been saved in this browser.` : `Your details for <strong>${safeEmail}</strong> were not saved. You’ll see “user not found” if you try to sign in.`}</p>
+        <div class="demo-info"><strong>${accountSaved ? "Email confirmation isn’t connected" : "This device won’t remember this account"}</strong><span>${accountSaved ? "Sign in with the email and password you just created. Account data stays in this browser." : "Create the account again and select “Remember me on this device” if you want to sign in later."}</span></div>
         <button class="auth-submit" type="button" data-auth-view="signin" data-auth-email="${safeEmail}">Continue to sign in</button>
         <button class="auth-back-link" type="button" data-auth-view="signin" data-auth-email="${safeEmail}">Back to sign in</button>
       </section>`,
@@ -448,14 +462,29 @@ function startPropertySetup() {
 }
 
 function propertySetupView() {
-  const steps = ["Property", "Rooms & stays", "Photos & review"];
+  const steps = ["Property", "Amenities", "Rooms & stays", "Photos & review"];
   const progress = `<div class="setup-progress">${steps.map((step, index) => `<span class="${propertySetupStep === index + 1 ? "active" : propertySetupStep > index + 1 ? "complete" : ""}"><b>${propertySetupStep > index + 1 ? "✓" : index + 1}</b>${step}</span>`).join("")}</div>`;
   const photoPreview = propertyDraftPhotos.map((photo, index) => `<div class="setup-photo"><img src="${photo.data}" alt="Selected property photo ${index + 1}"><button type="button" aria-label="Remove photo ${index + 1}" data-remove-photo="${index}">×</button></div>`).join("");
+  const amenityGroups = {
+    "Internet & work": ["Wi-Fi", "Dedicated workspace", "Business centre"],
+    "Kitchen & dining": ["Kitchen", "Kitchenette", "Refrigerator", "Microwave", "Stove", "Oven", "Dishwasher", "Kettle", "Coffee maker", "Dining area", "Breakfast included", "Restaurant", "Bar"],
+    "Bathroom": ["Private bathroom", "Hot water", "Bathtub", "Shower", "Hair dryer", "Towels", "Toiletries"],
+    "Bedroom & laundry": ["Bed linen", "Extra pillows and blankets", "Wardrobe", "Washing machine", "Tumble dryer", "Iron", "Daily housekeeping"],
+    "Comfort & entertainment": ["Air conditioning", "Heating", "Ceiling fan", "Fireplace", "Television", "Streaming services", "Board games"],
+    "Facilities & outdoors": ["Free parking", "Swimming pool", "Hot tub", "Gym", "Spa", "Garden", "Patio or balcony", "BBQ grill", "Beach access", "Waterfront"],
+    "Family & accessibility": ["Family rooms", "Cot or crib", "High chair", "Lift", "Step-free access", "Wheelchair accessible"],
+    "Safety & services": ["Smoke alarm", "Carbon monoxide alarm", "Fire extinguisher", "First-aid kit", "24-hour check-in", "Luggage storage", "Airport shuttle", "Concierge"],
+  };
+  const amenitySelection = (amenityGroups) => Object.entries(amenityGroups).map(([group, items]) => `
+    <fieldset class="amenity-group">
+      <legend>${group}</legend>
+      <div class="amenity-options">${items.map((amenity) => `<label class="amenity-option"><input type="checkbox" name="amenities" value="${escapeHTML(amenity)}" ${propertyDraft.amenities.includes(amenity) ? "checked" : ""}><span>${escapeHTML(amenity)}</span></label>`).join("")}</div>
+    </fieldset>`).join("");
 
   let stepContent = "";
   if (propertySetupStep === 1) {
     stepContent = `
-      <div class="setup-section-title"><p class="eyebrow accent">STEP 1 OF 3</p><h2>Tell us about your property</h2><p>Start with the details guests need to find and understand your place.</p></div>
+      <div class="setup-section-title"><p class="eyebrow accent">STEP 1 OF 4</p><h2>Tell us about your property</h2><p>Start with the details guests need to find and understand your place.</p></div>
       <div class="form-grid setup-form-grid">
         <label>Property name<input name="name" value="${escapeHTML(propertyDraft.name)}" placeholder="e.g. Seaside Guest House" required></label>
         <label>Type of accommodation<select name="type" required><option value="">Choose a property type</option>${["Hotel", "Guesthouse", "Bed and breakfast", "Apartment", "Holiday home", "Lodge", "Hostel", "Other"].map((type) => `<option ${propertyDraft.type === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
@@ -468,7 +497,12 @@ function propertySetupView() {
       </div>`;
   } else if (propertySetupStep === 2) {
     stepContent = `
-      <div class="setup-section-title"><p class="eyebrow accent">STEP 2 OF 3</p><h2>Set up your rooms and stays</h2><p>Choose your room inventory, nightly price and the dates you can welcome guests.</p></div>
+      <div class="setup-section-title"><p class="eyebrow accent">STEP 2 OF 4</p><h2>What does your property offer?</h2><p>Select all amenities guests can use during their stay. Only choose features that are available at this property.</p></div>
+      <div class="amenities-list">${amenitySelection(amenityGroups)}</div>
+      <label class="amenity-notes">Other amenities <span>Optional</span><textarea name="additionalAmenities" rows="3" placeholder="Add any other facilities or services guests can use">${escapeHTML(propertyDraft.additionalAmenities)}</textarea></label>`;
+  } else if (propertySetupStep === 3) {
+    stepContent = `
+      <div class="setup-section-title"><p class="eyebrow accent">STEP 3 OF 4</p><h2>Set up your rooms and stays</h2><p>Choose your room inventory, nightly price and the dates you can welcome guests.</p></div>
       <div class="form-grid setup-form-grid">
         <label>Room or unit name<input name="roomName" value="${escapeHTML(propertyDraft.roomName)}" placeholder="e.g. Double room" required></label>
         <label>Number of rooms or units<input name="roomCount" type="number" min="1" max="500" value="${escapeHTML(propertyDraft.roomCount)}" required></label>
@@ -482,24 +516,24 @@ function propertySetupView() {
       <div class="inline-notice"><span>ⓘ</span><p>Your dates and rates are saved as listing details. This demo does not publish the property or receive real guest bookings.</p></div>`;
   } else {
     stepContent = `
-      <div class="setup-section-title"><p class="eyebrow accent">STEP 3 OF 3</p><h2>Add photos and review</h2><p>Photos help guests picture their stay. Add up to five images, then check your listing details.</p></div>
+      <div class="setup-section-title"><p class="eyebrow accent">STEP 4 OF 4</p><h2>Add photos and review</h2><p>Photos help guests picture their stay. Add up to five images, then check your listing details.</p></div>
       <label class="photo-upload-zone"><input type="file" accept="image/*" multiple data-property-photos><span class="photo-upload-icon">↑</span><strong>Choose property photos</strong><small>JPG, PNG or WebP · up to 8 MB each · maximum 5 photos</small></label>
       ${photoPreview ? `<div class="setup-photo-grid">${photoPreview}</div>` : `<p class="photo-optional-note">Photos are optional. You can save the property without adding images.</p>`}
       <div class="listing-review">
         <div class="panel-header"><div><p class="eyebrow">LISTING PREVIEW</p><h3>${escapeHTML(propertyDraft.name || "Your property")}</h3></div><span class="status-pill pending">Not published</span></div>
-        <div class="review-grid"><span><small>Accommodation</small><strong>${escapeHTML(propertyDraft.type || "Not set")}</strong></span><span><small>Location</small><strong>${escapeHTML([propertyDraft.city, propertyDraft.country].filter(Boolean).join(", ") || "Not set")}</strong></span><span><small>Rooms</small><strong>${escapeHTML(propertyDraft.roomCount || "1")} × ${escapeHTML(propertyDraft.roomName || "Room")}</strong></span><span><small>Rate</small><strong>${escapeHTML(propertyDraft.currency)} ${escapeHTML(propertyDraft.baseRate || "0")} per night</strong></span><span><small>Available for stays</small><strong>${escapeHTML(propertyDraft.availableFrom || "—")} to ${escapeHTML(propertyDraft.availableUntil || "—")}</strong></span><span><small>Guest capacity</small><strong>Up to ${escapeHTML(propertyDraft.guestsPerRoom || "2")} per room · minimum ${escapeHTML(propertyDraft.minimumStay || "1")} night(s)</strong></span></div>
+        <div class="review-grid"><span><small>Accommodation</small><strong>${escapeHTML(propertyDraft.type || "Not set")}</strong></span><span><small>Location</small><strong>${escapeHTML([propertyDraft.city, propertyDraft.country].filter(Boolean).join(", ") || "Not set")}</strong></span><span><small>Rooms</small><strong>${escapeHTML(propertyDraft.roomCount || "1")} × ${escapeHTML(propertyDraft.roomName || "Room")}</strong></span><span><small>Rate</small><strong>${escapeHTML(propertyDraft.currency)} ${escapeHTML(propertyDraft.baseRate || "0")} per night</strong></span><span><small>Available for stays</small><strong>${escapeHTML(propertyDraft.availableFrom || "—")} to ${escapeHTML(propertyDraft.availableUntil || "—")}</strong></span><span><small>Guest capacity</small><strong>Up to ${escapeHTML(propertyDraft.guestsPerRoom || "2")} per room · minimum ${escapeHTML(propertyDraft.minimumStay || "1")} night(s)</strong></span><span class="full-width"><small>Amenities (${propertyDraft.amenities.length})</small><strong>${escapeHTML([...propertyDraft.amenities, propertyDraft.additionalAmenities].filter(Boolean).join(", ") || "No amenities selected")}</strong></span></div>
       </div>`;
   }
 
   return `
-    <header class="page-heading setup-page-heading"><div><p class="eyebrow accent">PROPERTY SETUP</p><h1>Add a property</h1>    <p class="subhead">Add your property details, rooms, rates and available stay dates.</p></div><button class="secondary-btn" type="button" data-action="cancel-property">Cancel</button></header>
+    <header class="page-heading setup-page-heading"><div><p class="eyebrow accent">PROPERTY SETUP</p><h1>Add a property</h1>    <p class="subhead">Add your property details, amenities, rooms, rates and available stay dates.</p></div><button class="secondary-btn" type="button" data-action="cancel-property">Cancel</button></header>
     ${progress}
     <form class="panel property-setup-panel" id="property-setup-form" novalidate>
       ${stepContent}
       <div class="setup-form-footer">
         <button class="secondary-btn" type="button" data-setup-back ${propertySetupStep === 1 ? "disabled" : ""}>Back</button>
-        <span>Step ${propertySetupStep} of 3</span>
-        ${propertySetupStep < 3
+        <span>Step ${propertySetupStep} of 4</span>
+        ${propertySetupStep < 4
           ? `<button class="primary-btn" type="button" data-setup-next>Continue</button>`
           : `<button class="primary-btn" type="button" data-setup-finish>Save property</button>`}
       </div>
@@ -517,7 +551,7 @@ const pageViews = {
     </section>
     ${properties.length
       ? `<section class="panel"><div class="panel-header"><div><p class="eyebrow">Your first listing</p><h3>${escapeHTML(properties[0][0])}</h3></div><button class="text-btn" type="button" data-page="properties">Manage properties →</button></div><p class="setup-summary">${escapeHTML(properties[0][1])} · ${escapeHTML(properties[0][2])} · Opens for stays ${escapeHTML(properties[0][5].availableFrom)}–${escapeHTML(properties[0][5].availableUntil)}</p><div class="content-grid dashboard-grid"><div><p class="eyebrow">Reservations</p>${bookings.length ? bookingTable() : propertyEmptyState("No guest stays yet", "Your reservation list will fill in when travellers book your property.", "Review availability")}</div><div><p class="eyebrow">Guest directory</p>${guests.length ? "" : `<p class="zero-note">0 guests · guest profiles appear after the first completed booking.</p>`}</div></div></section>`
-      : `<section class="panel first-property-panel"><div class="first-property-mark">⌂</div><p class="eyebrow accent">LET'S GET STARTED</p><h2>Bring your property to Fidelity Stay</h2><p>Add your accommodation, room details, photos and the dates you’re open to guests. You can review everything before saving.</p><div class="onboarding-steps"><span><b>1</b><strong>Tell us about your place</strong></span><span><b>2</b><strong>Add rooms &amp; rates</strong></span><span><b>3</b><strong>Set your stay dates</strong></span><span><b>4</b><strong>Add property photos</strong></span></div><button class="primary-btn" type="button" data-action="start-property">Add your first property</button></section>
+      : `<section class="panel first-property-panel"><div class="first-property-mark">⌂</div><p class="eyebrow accent">LET'S GET STARTED</p><h2>Bring your property to Fidelity Stay</h2><p>Add your accommodation, amenities, room details, photos and the dates you’re open to guests. You can review everything before saving.</p><div class="onboarding-steps"><span><b>1</b><strong>Tell us about your place</strong></span><span><b>2</b><strong>Choose your amenities</strong></span><span><b>3</b><strong>Add rooms &amp; rates</strong></span><span><b>4</b><strong>Add photos and review</strong></span></div><button class="primary-btn" type="button" data-action="start-property">Add your first property</button></section>
       <section class="panel empty-bookings-panel"><p class="eyebrow">Guest activity</p><h3>Guests and reservations start at zero</h3><p>Once you have a property ready for stays, guest bookings and reservation details will appear here. There are no sample guests or bookings in this account.</p></section>`}`,
 
   properties: () => `
@@ -528,7 +562,7 @@ const pageViews = {
         <article class="panel property-card" data-property="${escapeHTML(property[0].toLowerCase())}">
           <div class="property-cover cover-${index % 4 + 1}">${property[5].photos?.[0] ? `<img src="${property[5].photos[0].data}" alt="${escapeHTML(property[0])}">` : ""}<span class="status-pill confirmed">Saved in your account</span></div>
           <div class="property-card-content"><div class="property-title-row"><div><h3>${escapeHTML(property[0])}</h3><p>${escapeHTML(property[1])}</p></div><button class="icon-button compact" aria-label="More actions for ${escapeHTML(property[0])}" type="button" data-toast="Property actions are ready to configure.">···</button></div>
-          <div class="property-card-meta"><span>${escapeHTML(property[2])}</span><span>${property[5].photos?.length || 0} photos</span><span>${escapeHTML(property[5].currency)} ${escapeHTML(property[5].baseRate)} / night</span></div><div class="property-card-actions"><button class="secondary-btn small" type="button" data-page="settings">Edit account settings</button><button class="text-btn" type="button" data-page="calendar">Open stays calendar →</button></div></div>
+          <div class="property-card-meta"><span>${escapeHTML(property[2])}</span><span>${countPropertyAmenities(property[5])} amenities</span><span>${property[5].photos?.length || 0} photos</span><span>${escapeHTML(property[5].currency)} ${escapeHTML(property[5].baseRate)} / night</span></div><div class="property-card-actions"><button class="secondary-btn small" type="button" data-page="settings">Edit account settings</button><button class="text-btn" type="button" data-page="calendar">Open stays calendar →</button></div></div>
         </article>`).join("")}</section>
       <button class="secondary-btn add-another-property" type="button" data-action="start-property">+ Add another property</button>`
       : `<section class="panel">${propertyEmptyState("Your property portfolio starts here", "You have 0 properties. Add a listing to describe your accommodation, room inventory, nightly rate, and the dates you can host guests.")}</section>`}`,
@@ -602,13 +636,18 @@ const pageViews = {
     const propertyName = escapeHTML(property?.name || "");
     return `
     ${heading("settings")}
-    <section class="settings-layout"><nav class="settings-nav" aria-label="Settings sections"><a class="selected" href="#property-details">Property details</a><a href="#account-details">Account details</a><a href="#team-access">Team access</a><a href="#notifications">Notifications</a><a href="#payments">Payout details</a></nav>
+    <section class="settings-layout"><nav class="settings-nav" aria-label="Settings sections"><a class="selected" href="#property-details">Property details</a><a href="#account-details">Account details</a><a href="#team-access">Team access</a><a href="#notifications">Notifications</a><a href="#payments">Payout details</a><a href="#account-access">Account access</a></nav>
     <form class="panel settings-form" id="settings-form"><section id="property-details" class="settings-section"><div class="panel-header"><div><p class="eyebrow">${propertyName || "No property selected"}</p><h3>Property details</h3></div>${property ? `<span class="status-pill confirmed">Saved</span>` : ""}</div>
       ${property ? `<div class="form-grid"><label>Property name<input value="${propertyName}" readonly></label><label>Property type<input value="${escapeHTML(property.type)}" readonly></label><label class="full-width">Street address<input value="${escapeHTML(property.address)}" readonly></label><label>City<input value="${escapeHTML(property.city)}" readonly></label><label>Country / region<input value="${escapeHTML(property.country)}" readonly></label><label>Check-in from<input type="time" value="${escapeHTML(property.checkIn)}" readonly></label><label>Check-out by<input type="time" value="${escapeHTML(property.checkOut)}" readonly></label></div><p class="zero-note">Property edits are managed in the listing workflow.</p>` : propertyEmptyState("Add a property to manage its details", "Your accommodation address, rooms and stay details appear here after you create a listing.")}</section>
       <section id="account-details" class="settings-section"><div class="panel-header"><div><p class="eyebrow">Your profile</p><h3>Account details</h3></div></div><div class="form-grid"><label>First name<input value="${firstName}"></label><label>Last name<input value="${lastName}"></label><label>Email address<input type="email" value="${accountEmail}" readonly></label><label>Preferred language<select><option>English</option><option>Afrikaans</option></select></label></div></section>
       <section id="team-access" class="settings-section"><div class="panel-header"><div><p class="eyebrow">Workspace members</p><h3>Team access</h3></div><button class="secondary-btn small" type="button" data-toast="Team invitations aren’t connected in this demo.">Invite a teammate</button></div><div class="team-member"><span class="guest-avatar">${accountInitials}</span><span><strong>${safeAccountName}</strong><small>Owner · All properties</small></span><span class="status-pill confirmed">Active</span></div></section>
       <section id="notifications" class="settings-section"><div class="panel-header"><div><p class="eyebrow">Stay up to date</p><h3>Notifications</h3></div></div><label class="preference-row"><input type="checkbox" checked><span><strong>New reservation updates</strong><small>Receive an alert when a guest books or changes a stay.</small></span></label><label class="preference-row"><input type="checkbox" checked><span><strong>Guest messages</strong><small>Get notified when guests send a message.</small></span></label></section>
       <section id="payments" class="settings-section"><div class="panel-header"><div><p class="eyebrow">Payout account</p><h3>Payout details</h3></div></div><p class="zero-note">No payout account is connected. Payout setup will be available when payment services are configured.</p></section>
+      <section id="account-access" class="settings-section"><div class="panel-header"><div><p class="eyebrow">Manage your access</p><h3>Account access</h3></div></div>
+        <div class="account-action-row"><span><strong>Sign out</strong><small>End your current session on this device. Your saved account stays here.</small></span><button class="secondary-btn small" type="button" data-account-action="signout">Sign out</button></div>
+        <div class="danger-zone"><div class="danger-zone-copy"><span class="danger-icon" aria-hidden="true">!</span><span><strong>Delete account</strong><small>Permanently remove this account and its saved properties from this browser.</small></span></div><button class="danger-outline-btn" type="button" data-account-action="delete">Delete account</button></div>
+        <p class="account-storage-note">This prototype stores account data only in this browser. Deletion here does not contact Fidelity Stay or remove data from another device.</p>
+      </section>
       <div class="form-footer"><small>Changes are saved in this browser.</small><button class="primary-btn" type="submit">Save changes</button></div>
     </form></section>`;
   },
@@ -627,6 +666,45 @@ function showToast(message) {
   toast.classList.add("visible");
   clearTimeout(showToast.timeoutId);
   showToast.timeoutId = setTimeout(() => toast.classList.remove("visible"), 2600);
+}
+
+function endAccountSession() {
+  currentAccount = null;
+  properties = [];
+  selectedPropertyId = "";
+  appShell.hidden = true;
+  authShell.hidden = false;
+  history.replaceState(null, "", "#signin");
+  renderAuth("signin");
+  window.scrollTo(0, 0);
+}
+
+function openAccountActionDialog(action) {
+  const dialog = document.getElementById("account-action-dialog");
+  const isDelete = action === "delete";
+  const accountEmail = escapeHTML(currentAccount?.email || "");
+  dialog.innerHTML = isDelete
+    ? `<div class="account-dialog-icon danger" aria-hidden="true">!</div>
+      <p class="eyebrow">Permanent action</p>
+      <h2 id="account-dialog-title">Delete your account?</h2>
+      <p id="account-dialog-description">This removes your partner account and its saved properties from this browser. This cannot be undone.</p>
+      <div class="account-dialog-notice"><strong>Prototype limitation</strong><span>Nothing is sent to Fidelity Stay. Other browsers or devices are not affected.</span></div>
+      <form id="account-action-form" data-account-action-form="delete">
+        <label for="delete-account-confirmation">Type <strong>DELETE</strong> to confirm</label>
+        <input id="delete-account-confirmation" name="confirmation" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="DELETE" required>
+        <p class="account-dialog-error" role="alert" hidden></p>
+        <div class="account-dialog-actions"><button class="secondary-btn" type="button" data-dialog-close>Keep account</button><button class="danger-btn" type="submit">Delete account</button></div>
+      </form>`
+    : `<button class="account-dialog-close" type="button" aria-label="Close sign-out dialog" data-dialog-close>×</button>
+      <div class="account-dialog-icon" aria-hidden="true">↗</div>
+      <p class="eyebrow">END SESSION</p>
+      <h2 id="account-dialog-title">Sign out?</h2>
+      <p id="account-dialog-description">You’re signed in as <strong>${accountEmail}</strong>. You can sign back in anytime; your saved account and properties will stay on this device.</p>
+      <form id="account-action-form" data-account-action-form="signout">
+        <div class="account-dialog-actions"><button class="secondary-btn" type="button" data-dialog-close>Stay signed in</button><button class="signout-confirm-btn" type="submit">Sign out</button></div>
+      </form>`;
+  dialog.showModal();
+  (dialog.querySelector("input") || dialog.querySelector("[type='submit']"))?.focus();
 }
 
 function renderPage(page) {
@@ -685,6 +763,12 @@ function exportCurrentPage() {
 }
 
 document.addEventListener("click", (event) => {
+  const accountDialog = document.getElementById("account-action-dialog");
+  if (event.target === accountDialog) {
+    accountDialog.close();
+    return;
+  }
+
   const authViewControl = event.target.closest("[data-auth-view]");
   if (authViewControl) {
     renderAuth(authViewControl.dataset.authView, authViewControl.dataset.authEmail || "");
@@ -714,11 +798,17 @@ document.addEventListener("click", (event) => {
   }
 
   if (target.dataset.authAction === "signout") {
-    currentAccount = null;
-    appShell.hidden = true;
-    authShell.hidden = false;
-    renderAuth("signin");
-    window.scrollTo(0, 0);
+    openAccountActionDialog("signout");
+    return;
+  }
+
+  if (target.dataset.accountAction) {
+    openAccountActionDialog(target.dataset.accountAction);
+    return;
+  }
+
+  if (target.hasAttribute("data-dialog-close")) {
+    document.getElementById("account-action-dialog").close();
     return;
   }
 
@@ -742,7 +832,7 @@ document.addEventListener("click", (event) => {
     }
     if (!form.reportValidity()) return;
     capturePropertyDraft(form);
-    propertySetupStep = Math.min(3, propertySetupStep + 1);
+    propertySetupStep = Math.min(4, propertySetupStep + 1);
     renderPage("property-setup");
     return;
   }
@@ -759,7 +849,7 @@ document.addEventListener("click", (event) => {
     if (!propertyDraft.name || !propertyDraft.city || !propertyDraft.roomName || !propertyDraft.baseRate
       || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
       showToast("Check the property, room and availability details before saving.");
-      propertySetupStep = !propertyDraft.name || !propertyDraft.city ? 1 : 2;
+      propertySetupStep = !propertyDraft.name || !propertyDraft.city ? 1 : 3;
       renderPage("property-setup");
       document.getElementById("property-setup-form").reportValidity();
       return;
@@ -881,6 +971,14 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+  if (event.target.matches('[data-auth-form="signup"] [name="remember"]')) {
+    const option = event.target.closest(".signup-remember");
+    option.classList.remove("needs-choice");
+    const feedback = option.querySelector(".remember-feedback");
+    feedback.hidden = true;
+    feedback.textContent = "";
+  }
+
   if (event.target.matches("[data-property-photos]")) {
     const files = Array.from(event.target.files || []);
     if (files.length + propertyDraftPhotos.length > 5) {
@@ -925,13 +1023,40 @@ document.addEventListener("change", async (event) => {
 
 document.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (event.target.matches('[data-auth-form="signin"]')) {
+  if (event.target.matches("#account-action-form")) {
+    const form = event.target;
+    const dialog = document.getElementById("account-action-dialog");
+    if (!form.reportValidity()) return;
+
+    if (form.dataset.accountActionForm === "signout") {
+      dialog.close();
+      endAccountSession();
+      return;
+    }
+
+    try {
+      if (!currentAccount) throw new Error("Your session has ended. Sign in again before deleting your account.");
+      const accounts = loadAccounts();
+      const remainingAccounts = accounts.filter((account) => account.email !== currentAccount.email);
+      if (remainingAccounts.length === accounts.length) {
+        throw new Error("This account is no longer available in this browser. It was not deleted.");
+      }
+      saveAccounts(remainingAccounts);
+      dialog.close();
+      endAccountSession();
+      showToast("Your account and saved properties were deleted from this browser.");
+    } catch (error) {
+      const errorMessage = form.querySelector(".account-dialog-error");
+      errorMessage.textContent = error instanceof Error ? error.message : "The account could not be deleted.";
+      errorMessage.hidden = false;
+    }
+  } else if (event.target.matches('[data-auth-form="signin"]')) {
     const form = event.target;
     const email = form.elements.email.value.trim().toLowerCase();
     try {
       const account = loadAccounts().find((savedAccount) => savedAccount.email === email);
       if (!account) {
-        showAuthError(form, "We couldn’t find an account with those details. Create an account first or check your email.");
+        showAuthError(form, "User not found. Select “Remember me on this device” when creating an account, or check your email.");
         return;
       }
       const submittedHash = await hashPassword(form.elements.password.value, account.salt);
@@ -955,6 +1080,21 @@ document.addEventListener("submit", async (event) => {
       const accounts = loadAccounts();
       if (accounts.some((account) => account.email === email)) {
         showAuthError(form, "An account with this email already exists. Sign in instead.");
+        return;
+      }
+      const rememberAccount = form.elements.remember.checked;
+      if (!rememberAccount) {
+        const rememberOption = form.querySelector(".signup-remember");
+        const feedback = rememberOption.querySelector(".remember-feedback");
+        rememberOption.classList.remove("needs-choice");
+        void rememberOption.offsetWidth;
+        rememberOption.classList.add("needs-choice");
+        feedback.textContent = "Not selected: this account will not be saved on this device.";
+        feedback.hidden = false;
+        setTimeout(() => {
+          rememberOption.classList.remove("needs-choice");
+          renderAuth("verify", email, false);
+        }, 700);
         return;
       }
       const salt = createSalt();
